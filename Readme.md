@@ -65,6 +65,10 @@ Post-build scripts are similar to cargo build scripts, but they get a different 
 - `CRATE_TARGET_DIR`: The path to the `target` directory of your crate.
 - `CRATE_OUT_DIR`: The path to the directory where cargo puts the compiled binaries. This path is constructed by appending `CRATE_TARGET_TRIPLE` and `CRATE_PROFILE` to `CRATE_TARGET_DIR`.
 
+## Dependencies
+
+Dependencies for post build scripts can be specified in a `[package.metadata.cargo-post.dependencies]` table in your `Cargo.toml`.
+
 ### Example
 
 ```rust

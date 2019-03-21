@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    fs::{self, File},
+    io::Read,
     ops::Deref,
     path::{Path, PathBuf},
     process::{self, Command},
@@ -127,6 +129,30 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         post_build_script_path.display()
     );
 
+    let cargo_toml: toml::Value = {
+        let mut content = String::new();
+        File::open(&manifest_path)
+            .expect(&format!("Failed to open Cargo.toml"))
+            .read_to_string(&mut content)
+            .expect(&format!("Failed to read Cargo.toml"));
+        content
+            .parse::<toml::Value>()
+            .expect(&format!("Failed to parse Cargo.toml"))
+    };
+
+    let cargo_post_metadata = cargo_toml
+        .get("package")
+        .and_then(|table| table.get("metadata"))
+        .and_then(|table| table.get("cargo-post"));
+
+    let dependencies = cargo_post_metadata.and_then(|table| table.get("dependencies"));
+    let dependencies_string = if let Some(dependencies) = dependencies {
+        toml::to_string(dependencies)
+            .expect("invalid toml in package.metadata.cargo-post.dependencies")
+    } else {
+        String::new()
+    };
+
     // Create a dummy Cargo.toml for post build script
     let build_script_manifest_dir = metadata
         .target_directory
@@ -137,7 +163,8 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     let build_script_manifest_path = build_script_manifest_dir.join("Cargo.toml");
     let build_script_manifest_content = format!(
         include_str!("post_build_script_manifest.toml"),
-        file_name = post_build_script_path.display()
+        file_name = post_build_script_path.display(),
+        dependencies = dependencies_string,
     );
     fs::write(&build_script_manifest_path, build_script_manifest_content)
         .expect("Failed to write post build script manifest");
