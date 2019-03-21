@@ -57,6 +57,7 @@ Post-build scripts are similar to cargo build scripts, but they get a different 
 - `CRATE_BUILD_COMMAND`: The full cargo command that was used for building without `post`
     - Example: When the crate is compiled using `cargo post build --release`, the environment variable has the value `cargo build --release`.
 - `CRATE_MANIFEST_DIR`: The directory where the `Cargo.toml` of the crates lives.
+- `CRATE_MANIFEST_PATH`: The path to the `Cargo.toml` of the crates.
 - `CRATE_PROFILE`: `debug` or `release`, depending on whether `--release` was passed in the build command.
 - `CRATE_TARGET`: The full content of what was passed as `--target` or the empty string if no `--target` was passed.
 - `CRATE_TARGET_TRIPLE`: The target triple of the passed `--target` or the empty string if no `--target` was passed.

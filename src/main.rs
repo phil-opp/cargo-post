@@ -178,6 +178,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     cmd.arg("--manifest-path");
     cmd.arg(build_script_manifest_path.as_os_str());
     cmd.env("CRATE_MANIFEST_DIR", manifest_dir.as_os_str());
+    cmd.env("CRATE_MANIFEST_PATH", manifest_dir.join("Cargo.toml").as_os_str());
     cmd.env(
         "CRATE_TARGET_DIR",
         metadata.target_directory.as_os_str(),
