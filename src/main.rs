@@ -179,7 +179,12 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         }
     };
     let target_triple = {
-        let file_stem = target_path.as_ref().map(|t| Path::new(t).file_stem().expect("target has no file stem").to_owned());
+        let file_stem = target_path.as_ref().map(|t| {
+            Path::new(t)
+                .file_stem()
+                .expect("target has no file stem")
+                .to_owned()
+        });
         file_stem.map(|s| s.into_string().expect("target not a valid string"))
     };
     let profile = if env::args().find(|arg| arg == "--release").is_some() {
@@ -205,14 +210,17 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     cmd.arg("--manifest-path");
     cmd.arg(build_script_manifest_path.as_os_str());
     cmd.env("CRATE_MANIFEST_DIR", manifest_dir.as_os_str());
-    cmd.env("CRATE_MANIFEST_PATH", manifest_dir.join("Cargo.toml").as_os_str());
     cmd.env(
-        "CRATE_TARGET_DIR",
-        metadata.target_directory.as_os_str(),
+        "CRATE_MANIFEST_PATH",
+        manifest_dir.join("Cargo.toml").as_os_str(),
     );
+    cmd.env("CRATE_TARGET_DIR", metadata.target_directory.as_os_str());
     cmd.env("CRATE_OUT_DIR", out_dir);
     cmd.env("CRATE_TARGET", target_path.unwrap_or(String::new()));
-    cmd.env("CRATE_TARGET_TRIPLE", target_triple.unwrap_or(String::new()));
+    cmd.env(
+        "CRATE_TARGET_TRIPLE",
+        target_triple.unwrap_or(String::new()),
+    );
     cmd.env("CRATE_PROFILE", profile);
     cmd.env("CRATE_BUILD_COMMAND", build_command);
     Some(cmd.status().expect("Failed to run post build script"))
