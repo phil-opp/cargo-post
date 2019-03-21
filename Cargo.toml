@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["Philipp Oppermann <dev@phil-opp.com>"]
 edition = "2018"
 readme = "Readme.md"
+description = "A `cargo` wrapper that executes a post build script after a successful build."
+license = "MIT/Apache-2.0"
 
 [dependencies.cargo_metadata]
 version = "0.7.3"
