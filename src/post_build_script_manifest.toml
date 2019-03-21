@@ -1,0 +1,8 @@
+[package]
+name = "post-build-script"
+version = "0.1.0"
+edition = "2018"
+
+[[bin]]
+name = "post-build-script"
+path = "{file_name}"

@@ -1,0 +1,14 @@
+A `cargo` wrapper that executes a post build script after a successful build
+
+USAGE:
+    cargo post --help           Show this help message and exit
+    cargo post --version        Show version information and exit
+    cargo post CMD [ARGS]       Execute `cargo CMD [ARGS]` and run
+                                `post_build.rs` afterwards (if it's a build
+                                command).
+
+EXAMPLES:
+    cargo post build            Builds the crate
+    cargo post build --release  Builds the crate in release mode
+    cargo post xbuild           Builds the crate using cargo-xbuild
+    cargo check                 Checks the crate without executing post_build
