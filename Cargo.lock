@@ -1,6 +1,6 @@
 [[package]]
 name = "cargo-post"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "cargo_metadata 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
