@@ -6,6 +6,8 @@ edition = "2018"
 readme = "Readme.md"
 description = "A `cargo` wrapper that executes a post build script after a successful build."
 license = "MIT/Apache-2.0"
+documentation = "https://docs.rs/crate/cargo-post/"
+repository = "https://github.com/phil-opp/cargo-post"
 
 [dependencies.cargo_metadata]
 version = "0.7.3"
