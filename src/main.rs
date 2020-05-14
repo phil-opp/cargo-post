@@ -145,9 +145,20 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         .and_then(|table| table.get("metadata"))
         .and_then(|table| table.get("cargo-post"));
 
-    let dependencies = cargo_post_metadata.and_then(|table| table.get("dependencies"));
-    let dependencies_string = if let Some(dependencies) = dependencies {
-        toml::to_string(dependencies)
+    let dependencies = cargo_post_metadata.and_then(|table| table.get("dependencies")).map(|v| v.clone());
+    let dependencies_string = if let Some(mut dependencies) = dependencies {
+        // adjust path dependencies
+        for (dep_name, dependency) in dependencies.as_table_mut().unwrap_or(&mut toml::value::Map::new()).iter_mut() {
+            if let Some(path) = dependency.get_mut("path") {
+                let dep_path = Path::new(path.as_str().expect("dependency path not a string"));
+                let path_canoncicalized = dep_path.canonicalize().expect(&format!("Dependency {} does not exist at {}", dep_name, dep_path.display()));
+                *path = toml::Value::String(path_canoncicalized.into_os_string().into_string().expect("dependency path is not valid UTF-8"));
+            }
+        }
+
+        let mut dependency_section = toml::value::Table::new();
+        dependency_section.insert("dependencies".into(), dependencies.clone());
+        toml::to_string(&dependency_section)
             .expect("invalid toml in package.metadata.cargo-post.dependencies")
     } else {
         String::new()
