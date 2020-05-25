@@ -7,5 +7,4 @@ edition = "2018"
 name = "post-build-script"
 path = "{file_name}"
 
-[dependencies]
 {dependencies}
