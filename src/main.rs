@@ -93,7 +93,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
 
     let package = {
         let mut args =
-            env::args().skip_while(|val| !val.starts_with("--package") | !val.starts_with("-p"));
+            env::args().skip_while(|val| !val.starts_with("--package") && !val.starts_with("-p"));
         let package_name = match args.next() {
             Some(ref p) if p == "--package" || p == "-p" => Some(args.next().unwrap()),
             Some(p) => Some(p.trim_start_matches("--package=").to_owned()),
