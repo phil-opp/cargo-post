@@ -4,7 +4,7 @@ name: Continuous integration
 
 jobs:
   check:
-    name: Check
+    name: Build
     strategy:
       matrix:
         platform: [
@@ -22,7 +22,7 @@ jobs:
           override: true
       - uses: actions-rs/cargo@v1
         with:
-          command: check
+          command: build
 
   test:
     name: Test Suite
