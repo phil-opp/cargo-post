@@ -174,7 +174,11 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     let build_script_manifest_path = build_script_manifest_dir.join("Cargo.toml");
     let build_script_manifest_content = format!(
         include_str!("post_build_script_manifest.toml"),
-        file_name = post_build_script_path.display(),
+        file_name = if cfg!(windows) {
+            str::replace(build_script_manifest_path.to_str().unwrap(), "\\", "\\\\")
+        } else {
+            build_script_manifest_path.to_str().unwrap().to_string()
+        },
         dependencies = dependencies_string,
     );
     fs::write(&build_script_manifest_path, build_script_manifest_content)
