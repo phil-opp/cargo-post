@@ -27,7 +27,7 @@ fn main() {
     // check arguments
     let mut args = env::args().peekable();
     assert!(args.next().is_some(), "no executable name in args");
-    if args.next().as_ref().map(Deref::deref) != Some("post") {
+    if args.next().as_deref() != Some("post") {
         panic!("cargo-post must be invoked as `cargo post`");
     }
     if args.peek().map(Deref::deref) == Some("--help") {
@@ -64,7 +64,7 @@ fn main() {
     }
 
     match build_script_call {
-        BuildScriptCall::NoCall => return,
+        BuildScriptCall::NoCall => {}
         BuildScriptCall::AfterCommand => {
             if let Some(exit_status) = run_post_build_script() {
                 if !exit_status.success() {
@@ -117,7 +117,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
 
     let manifest_path = manifest_path
         .map(PathBuf::from)
-        .unwrap_or(package.manifest_path.clone());
+        .unwrap_or_else(|| package.manifest_path.clone());
     let manifest_dir = manifest_path.parent().expect("failed to get crate folder");
     let post_build_script_path = manifest_dir.join("post_build.rs");
 
@@ -132,12 +132,12 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     let cargo_toml: toml::Value = {
         let mut content = String::new();
         File::open(&manifest_path)
-            .expect(&format!("Failed to open Cargo.toml"))
+            .expect("Failed to open Cargo.toml")
             .read_to_string(&mut content)
-            .expect(&format!("Failed to read Cargo.toml"));
+            .expect("Failed to read Cargo.toml");
         content
             .parse::<toml::Value>()
-            .expect(&format!("Failed to parse Cargo.toml"))
+            .expect("Failed to parse Cargo.toml")
     };
 
     let cargo_post_metadata = cargo_toml
@@ -147,7 +147,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
 
     let dependencies = cargo_post_metadata
         .and_then(|table| table.get("dependencies"))
-        .map(|v| v.clone());
+        .cloned();
     let dependencies_string = if let Some(mut dependencies) = dependencies {
         // adjust path dependencies
         for (dep_name, dependency) in dependencies
@@ -157,11 +157,13 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         {
             if let Some(path) = dependency.get_mut("path") {
                 let dep_path = Path::new(path.as_str().expect("dependency path not a string"));
-                let path_canoncicalized = dep_path.canonicalize().expect(&format!(
-                    "Dependency {} does not exist at {}",
-                    dep_name,
-                    dep_path.display()
-                ));
+                let path_canoncicalized = dep_path.canonicalize().unwrap_or_else(|_| {
+                    panic!(
+                        "Dependency {} does not exist at {}",
+                        dep_name,
+                        dep_path.display()
+                    )
+                });
                 *path = toml::Value::String(
                     path_canoncicalized
                         .into_os_string()
@@ -172,7 +174,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         }
 
         let mut dependency_section = toml::value::Table::new();
-        dependency_section.insert("dependencies".into(), dependencies.clone());
+        dependency_section.insert("dependencies".into(), dependencies);
         toml::to_string(&dependency_section)
             .expect("invalid toml in package.metadata.cargo-post.dependencies")
     } else {
@@ -213,7 +215,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         });
         file_stem.map(|s| s.into_string().expect("target not a valid string"))
     };
-    let profile = if env::args().find(|arg| arg == "--release").is_some() {
+    let profile = if env::args().any(|arg| arg == "--release") {
         "release"
     } else {
         "debug"
@@ -242,11 +244,8 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     );
     cmd.env("CRATE_TARGET_DIR", metadata.target_directory.as_os_str());
     cmd.env("CRATE_OUT_DIR", out_dir);
-    cmd.env("CRATE_TARGET", target_path.unwrap_or(String::new()));
-    cmd.env(
-        "CRATE_TARGET_TRIPLE",
-        target_triple.unwrap_or(String::new()),
-    );
+    cmd.env("CRATE_TARGET", target_path.unwrap_or_default());
+    cmd.env("CRATE_TARGET_TRIPLE", target_triple.unwrap_or_default());
     cmd.env("CRATE_PROFILE", profile);
     cmd.env("CRATE_BUILD_COMMAND", build_command);
     Some(cmd.status().expect("Failed to run post build script"))
