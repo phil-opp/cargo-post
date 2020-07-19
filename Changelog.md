@@ -1,5 +1,7 @@
 ## Unreleased
 
+# 0.1.5 – 2020-07-19
+
 - Fix use with workpaces ([#11](https://github.com/phil-opp/cargo-post/pull/11))
 
 ## 0.1.4
