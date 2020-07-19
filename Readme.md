@@ -20,7 +20,7 @@ cargo post CMD [ARGS]
 
 The `post_build.rs` is only run if `CMD` is a build command like `build` or [`xbuild`](http://github.com/rust-osdev/cargo-xbuild/).
 
-
+In workspaces, you might have to pass a `--package` argument to `cargo build` to specify the package for which the post build script should be run.
 
 ### Examples:
 
