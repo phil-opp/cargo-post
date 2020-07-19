@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Fix use with workpaces ([#11](https://github.com/phil-opp/cargo-post/pull/11))
 - Fixed dummy manifest path not being correctly parsed on windows ([#10](https://github.com/phil-opp/cargo-post/pull/10))
 
 ## 0.1.4
