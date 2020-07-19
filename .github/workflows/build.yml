@@ -41,9 +41,11 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
+      - run: cargo install --path . --debug
+      - run: cargo post build --package simple
+        working-directory: "tests/simple"
+      - run: cargo post build --package dependency
+        working-directory: "tests/dependency"
 
   fmt:
     name: Rustfmt
