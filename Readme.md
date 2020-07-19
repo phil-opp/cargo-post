@@ -69,21 +69,6 @@ Post-build scripts are similar to cargo build scripts, but they get a different 
 
 Dependencies for post build scripts can be specified in a `[package.metadata.cargo-post.dependencies]` table in your `Cargo.toml`.
 
-### Example
-
-```rust
-use std::env;
-
-fn main() {
-    println!("Hello from post build script!");
-    for (key, value) in env::vars() {
-        if key.starts_with("CRATE_") {
-            println!("{}: {}", key, value);
-        }
-    }
-}
-```
-
 ## License
 
 Licensed under either of
