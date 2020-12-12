@@ -5,7 +5,7 @@ edition = "2018"
 
 [[bin]]
 name = "post-build-script"
-path = "{file_name}"
+path = {file_name}
 
 [workspace]
 
