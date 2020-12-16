@@ -12,6 +12,6 @@ fn main() {
     assert_eq!(env::var("CRATE_TARGET").unwrap(), "");
     assert_eq!(env::var("CRATE_TARGET_TRIPLE").unwrap(), "");
     assert_eq!(PathBuf::from(env::var("CRATE_TARGET_DIR").unwrap()), current_parent.join("target"));
-    assert_eq!(PathBuf::from(env::var("CRATE_OUT_DIR").unwrap()), current_parent.join("target/debug"));
+    assert_eq!(PathBuf::from(env::var("CRATE_OUT_DIR").unwrap()), current_parent.join("target").join("debug"));
     println!("ok");
 }
