@@ -7,6 +7,8 @@ use std::{
     process::{self, Command},
 };
 
+use cargo_metadata::{Metadata, Package};
+
 static HELP: &str = include_str!("help.txt");
 
 /// The required post_build script call
@@ -52,30 +54,6 @@ fn main() {
         None => BuildScriptCall::NoCall,
     };
 
-    // run cargo
-    let mut cmd = Command::new("cargo");
-    cmd.args(args);
-    let exit_status = match cmd.status() {
-        Ok(status) => status,
-        Err(err) => panic!("failed to execute command `{:?}`: {:?}", cmd, err),
-    };
-    if !exit_status.success() {
-        process::exit(exit_status.code().unwrap_or(1));
-    }
-
-    match build_script_call {
-        BuildScriptCall::NoCall => {}
-        BuildScriptCall::AfterCommand => {
-            if let Some(exit_status) = run_post_build_script() {
-                if !exit_status.success() {
-                    process::exit(exit_status.code().unwrap_or(1));
-                }
-            }
-        }
-    };
-}
-
-fn run_post_build_script() -> Option<process::ExitStatus> {
     let mut cmd = cargo_metadata::MetadataCommand::new();
     cmd.no_deps();
     let manifest_path = {
@@ -87,11 +65,11 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         }
     };
     if let Some(ref manifest_path) = manifest_path {
-        cmd.manifest_path(manifest_path);
+        cmd.manifest_path(&manifest_path);
     }
     let metadata = cmd.exec().unwrap();
 
-    let package = {
+    let packages = {
         let mut args =
             env::args().skip_while(|val| !val.starts_with("--package") && !val.starts_with("-p"));
         let package_name = match args.next() {
@@ -99,22 +77,60 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
             Some(p) => Some(p.trim_start_matches("--package=").to_owned()),
             None => None,
         };
-        let mut packages = metadata.packages.iter();
-        match package_name {
-            Some(name) => packages
-                .find(|p| p.name == name)
-                .expect("specified package not found"),
-            None => {
-                let package = packages.next().expect("workspace has no packages");
-                assert!(
-                    packages.next().is_none(),
-                    "Please specify a `--package` argument"
-                );
-                package
-            }
+
+        let packages: Vec<_> = metadata
+            .packages
+            .iter()
+            .filter(|&p| match package_name {
+                Some(ref name) if &p.name == name => true,
+                None => true,
+                _ => false,
+            })
+            .collect();
+
+        if package_name.is_some() && packages.is_empty() {
+            panic!("specified package not found");
         }
+
+        packages
     };
 
+    let args: Vec<_> = args.collect();
+    for package in packages {
+        // run cargo
+        let mut cmd = Command::new("cargo");
+        cmd.args(args.clone());
+
+        cmd.current_dir(package.manifest_path.parent().unwrap());
+
+        let exit_status = match cmd.status() {
+            Ok(status) => status,
+            Err(err) => panic!("failed to execute command `{:?}`: {:?}", cmd, err),
+        };
+        if !exit_status.success() {
+            process::exit(exit_status.code().unwrap_or(1));
+        }
+
+        match build_script_call {
+            BuildScriptCall::NoCall => {}
+            BuildScriptCall::AfterCommand => {
+                if let Some(exit_status) =
+                    run_post_build_script(&metadata, manifest_path.as_ref(), package)
+                {
+                    if !exit_status.success() {
+                        process::exit(exit_status.code().unwrap_or(1));
+                    }
+                }
+            }
+        };
+    }
+}
+
+fn run_post_build_script(
+    metadata: &Metadata,
+    manifest_path: Option<&String>,
+    package: &Package,
+) -> Option<process::ExitStatus> {
     let manifest_path = manifest_path
         .map(PathBuf::from)
         .unwrap_or_else(|| package.manifest_path.clone());
@@ -233,6 +249,40 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         cmd
     };
 
+    let all_examples = env::args().any(|arg| arg == "--examples");
+    let example_name = {
+        if all_examples {
+            None
+        } else {
+            let mut args = env::args().skip_while(|val| !val.starts_with("--example"));
+            match args.next() {
+                Some(ref p) if p == "--example" => {
+                    Some(args.next().expect("no example after --example"))
+                }
+                Some(p) => Some(p.trim_start_matches("--example=").to_owned()),
+                None => None,
+            }
+        }
+    };
+
+    let bins: Vec<_> = package
+        .targets
+        .iter()
+        .filter(|t| t.crate_types.contains(&"bin".to_owned()))
+        .filter_map(|t| match example_name {
+            Some(ref example) if t.kind.contains(&"example".to_owned()) && &t.name == example => {
+                Some(format!("examples/{}", t.name))
+            }
+            None if all_examples && t.kind.contains(&"example".to_owned()) => {
+                Some(format!("examples/{}", t.name))
+            }
+            None if !all_examples && t.kind.contains(&"bin".to_owned()) => {
+                Some(format!("{}", t.name))
+            }
+            _ => None,
+        })
+        .collect();
+
     // run post build script
     let mut cmd = Command::new("cargo");
     cmd.arg("run");
@@ -249,5 +299,6 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     cmd.env("CRATE_TARGET_TRIPLE", target_triple.unwrap_or_default());
     cmd.env("CRATE_PROFILE", profile);
     cmd.env("CRATE_BUILD_COMMAND", build_command);
+    cmd.env("CRATE_OUT_BINS", bins.join(":"));
     Some(cmd.status().expect("Failed to run post build script"))
 }
