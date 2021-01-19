@@ -136,58 +136,62 @@ fn main() {
                 run_post_build_script(&metadata, manifest_path.as_ref(), package);
 
             if let Some(ref output) = output {
+                println!("{}", String::from_utf8_lossy(&output.stdout));
+
                 if !output.status.success() {
                     eprintln!("{}", String::from_utf8_lossy(&output.stderr));
                     process::exit(output.status.code().unwrap_or(1));
                 }
             }
 
-            let out = PathBuf::from(env_vars.get("CRATE_OUT_DIR").unwrap());
-            let mut bins = env_vars
-                .get("CRATE_OUT_BINS")
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .split(':')
-                .map(|b| out.join(b))
-                .filter(|b| b.exists());
+            if matches!(build_script_call, BuildScriptCall::InbetweenCommand) {
+                let out = PathBuf::from(env_vars.get("CRATE_OUT_DIR").unwrap());
 
-            let mut bin = bins.next().expect("Found no binary to be executed!");
+                let mut bins = env_vars
+                    .get("CRATE_OUT_BINS")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .split(':')
+                    .filter(|b| !b.is_empty())
+                    .map(|b| out.join(b))
+                    .filter(|b| b.exists());
 
-            if bins.next().is_some() {
-                panic!("More than one binary found! Use the `--bin` option to specify a binary")
-            }
+                let mut bin = bins.next().expect("Found no binary to be executed!");
 
-            // Parse stdout for `cargo:`
-            if let Some(ref output) = output {
-                for line in String::from_utf8_lossy(&output.stdout).lines() {
-                    if let Some(kv) = line.strip_prefix("cargo:updated-bin=") {
-                        let mut kv_iter = kv.split('=');
-                        match kv_iter.next() {
-                            Some(k) if Some(k) == bin.to_str() => {
-                                let v = PathBuf::from(kv_iter.next().expect("Missing new value in println!(\"cargo:updated-bin\") statement"));
-                                if !v.exists() {
-                                    panic!("New binary does not exist!");
+                if bins.next().is_some() {
+                    panic!("More than one binary found! Use the `--bin` option to specify a binary")
+                }
+
+                // Parse stdout for `cargo:`
+                if let Some(ref output) = output {
+                    for line in String::from_utf8_lossy(&output.stdout).lines() {
+                        if let Some(kv) = line.strip_prefix("cargo:updated-bin=") {
+                            let mut kv_iter = kv.split('=');
+                            match kv_iter.next() {
+                                Some(k) if Some(k) == bin.to_str() => {
+                                    let v = PathBuf::from(kv_iter.next().expect("Missing new value in println!(\"cargo:updated-bin\") statement"));
+                                    if !v.exists() {
+                                        panic!("New binary does not exist!");
+                                    }
+                                    bin = v;
                                 }
-                                bin = v;
-                            }
-                            Some(_k) => {
-                                panic!(
+                                Some(_k) => {
+                                    panic!(
                                     "Unknown binary in println!(\"cargo:updated-bin\") statement"
                                 );
+                                }
+                                None => {
+                                    panic!("Malformed println!(\"cargo:updated-bin\") statement");
+                                }
                             }
-                            None => {
-                                panic!("Malformed println!(\"cargo:updated-bin\") statement");
-                            }
+                        } else {
+                            // Log everything else to allow debug logging
+                            println!("{}", line);
                         }
-                    } else {
-                        // Log everything else to allow debug logging
-                        println!("{}", line);
                     }
                 }
-            }
 
-            if matches!(build_script_call, BuildScriptCall::InbetweenCommand) {
                 // Execute the resulting binary with the executable args passed in!
                 let mut cmd = Command::new(bin);
                 cmd.args(exec_args);
@@ -268,14 +272,12 @@ fn build_envs(
             Some(ref example) if t.kind.contains(&"example".to_owned()) && &t.name == example => {
                 Path::new("examples")
                     .join(&t.name)
-                    .to_owned()
                     .into_os_string()
                     .into_string()
                     .ok()
             }
             None if all_examples && t.kind.contains(&"example".to_owned()) => Path::new("examples")
                 .join(&t.name)
-                .to_owned()
                 .into_os_string()
                 .into_string()
                 .ok(),
