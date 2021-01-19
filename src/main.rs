@@ -1,5 +1,7 @@
 use std::{
+    collections::HashMap,
     env,
+    ffi::OsString,
     fs::{self, File},
     io::Read,
     ops::Deref,
@@ -21,8 +23,9 @@ enum BuildScriptCall {
     ///
     /// For example for `cargo build`.
     AfterCommand,
-    // TODO: Special variants for e.g. `cargo run` where the post build script needs to be
-    // run in between (i.e. after the build, but before running it).
+    /// Special variants for e.g. `cargo run` where the post build script needs to be
+    /// run in between (i.e. after the build, but before running it).
+    InbetweenCommand,
 }
 
 fn main() {
@@ -46,8 +49,8 @@ fn main() {
             "b" | "build" | "xbuild" => BuildScriptCall::AfterCommand,
             "c" | "check" | "clean" | "doc" | "new" | "init" | "update" | "search"
             | "uninstall" => BuildScriptCall::NoCall,
-            cmd if ["run", "test", "bench", "publish", "install"].contains(&cmd) => {
-                panic!("`cargo post {}` is not supported yet", cmd)
+            cmd if ["r", "t", "run", "test", "bench", "publish", "install"].contains(&cmd) => {
+                BuildScriptCall::InbetweenCommand
             }
             cmd => panic!("unknown cargo command `cargo {}`", cmd),
         },
@@ -97,48 +100,237 @@ fn main() {
 
     let args: Vec<_> = args.collect();
     for package in packages {
-        // run cargo
+        let mut package_args = args.clone();
+
+        // run cargo build
+        let exec_args: Vec<_> = if matches!(build_script_call, BuildScriptCall::InbetweenCommand) {
+            package_args[0] = "build".to_owned();
+
+            // Extract all executable args
+            let mut args_iter = package_args.splitn(2, |val| val.as_str().eq("--"));
+            let args = args_iter.next().unwrap_or_default().to_vec();
+            let exec_args = args_iter.next().unwrap_or_default().to_vec();
+
+            package_args = args;
+            exec_args
+        } else {
+            Vec::new()
+        };
+
         let mut cmd = Command::new("cargo");
-        cmd.args(args.clone());
+        cmd.args(package_args);
 
         cmd.current_dir(package.manifest_path.parent().unwrap());
 
-        let exit_status = match cmd.status() {
-            Ok(status) => status,
+        match cmd.status() {
+            Ok(status) if !status.success() => process::exit(status.code().unwrap_or(1)),
             Err(err) => panic!("failed to execute command `{:?}`: {:?}", cmd, err),
+            _ => {}
         };
-        if !exit_status.success() {
-            process::exit(exit_status.code().unwrap_or(1));
-        }
 
-        match build_script_call {
-            BuildScriptCall::NoCall => {}
-            BuildScriptCall::AfterCommand => {
-                if let Some(exit_status) =
-                    run_post_build_script(&metadata, manifest_path.as_ref(), package)
-                {
-                    if !exit_status.success() {
-                        process::exit(exit_status.code().unwrap_or(1));
+        if matches!(
+            build_script_call,
+            BuildScriptCall::AfterCommand | BuildScriptCall::InbetweenCommand
+        ) {
+            let (output, env_vars) =
+                run_post_build_script(&metadata, manifest_path.as_ref(), package);
+
+            if let Some(ref output) = output {
+                if !output.status.success() {
+                    process::exit(output.status.code().unwrap_or(1));
+                }
+            }
+
+            let out = PathBuf::from(env_vars.get("CRATE_OUT_DIR").unwrap());
+            let mut bins = env_vars
+                .get("CRATE_OUT_BINS")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .split(':')
+                .map(|b| out.join(b))
+                .filter(|b| b.exists());
+
+            let mut bin = bins.next().expect("Found no binary to be executed!");
+
+            if bins.next().is_some() {
+                panic!("More than one binary found! Use the `--bin` option to specify a binary, or the `default-run` manifest key")
+            }
+
+            // Parse stdout for `cargo:`
+            if let Some(ref output) = output {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    if let Some(kv) = line.strip_prefix("cargo:updated-bin=") {
+                        let mut kv_iter = kv.split('=');
+                        match kv_iter.next() {
+                            Some(k) if Some(k) == bin.to_str() => {
+                                let v = PathBuf::from(kv_iter.next().expect("Missing new value in println!(\"cargo:updated-bin\") statement"));
+                                if !v.exists() {
+                                    panic!("New binary does not exist!");
+                                }
+                                bin = v;
+                            }
+                            Some(_k) => {
+                                panic!(
+                                    "Unknown binary in println!(\"cargo:updated-bin\") statement"
+                                );
+                            }
+                            None => {
+                                panic!("Malformed println!(\"cargo:updated-bin\") statement");
+                            }
+                        }
+                    } else {
+                        // Log everything else to allow debug logging
+                        println!("{}", line);
                     }
                 }
             }
+
+            if matches!(build_script_call, BuildScriptCall::InbetweenCommand) {
+                // Execute the resulting binary with the executable args passed in!
+                let mut cmd = Command::new(bin);
+                cmd.args(exec_args);
+
+                match cmd.status() {
+                    Ok(status) if !status.success() => process::exit(status.code().unwrap_or(1)),
+                    Err(err) => panic!("failed to execute command `{:?}`: {:?}", cmd, err),
+                    _ => {}
+                };
+            }
         };
     }
+}
+
+fn build_envs(
+    metadata: &Metadata,
+    package: &Package,
+    manifest_dir: &Path,
+) -> HashMap<String, OsString> {
+    // gather arguments for post build script
+    let target_path = {
+        let mut args = env::args().skip_while(|val| !val.starts_with("--target"));
+        match args.next() {
+            Some(ref p) if p == "--target" => Some(args.next().expect("no target after --target")),
+            Some(p) => Some(p.trim_start_matches("--target=").to_owned()),
+            None => None,
+        }
+    };
+
+    let target_triple = {
+        let file_stem = target_path.as_ref().map(|t| {
+            Path::new(t)
+                .file_stem()
+                .expect("target has no file stem")
+                .to_owned()
+        });
+        file_stem.map(|s| s.into_string().expect("target not a valid string"))
+    };
+    let profile = if env::args().any(|arg| arg == "--release") {
+        "release"
+    } else {
+        "debug"
+    };
+
+    let mut out_dir = metadata.target_directory.clone();
+    if let Some(ref target_triple) = target_triple {
+        out_dir.push(target_triple);
+    }
+    out_dir.push(&profile);
+    let build_command = {
+        let mut cmd = String::from("cargo ");
+        let args: Vec<String> = env::args().skip(2).collect();
+        cmd.push_str(&args.join(" "));
+        cmd
+    };
+
+    let all_examples = env::args().any(|arg| arg == "--examples");
+    let example_name = {
+        if all_examples {
+            None
+        } else {
+            let mut args = env::args().skip_while(|val| !val.starts_with("--example"));
+            match args.next() {
+                Some(ref p) if p == "--example" => {
+                    Some(args.next().expect("no example after --example"))
+                }
+                Some(p) => Some(p.trim_start_matches("--example=").to_owned()),
+                None => None,
+            }
+        }
+    };
+
+    let bins: Vec<_> = package
+        .targets
+        .iter()
+        .filter(|t| t.crate_types.contains(&"bin".to_owned()))
+        .filter_map(|t| match example_name {
+            Some(ref example) if t.kind.contains(&"example".to_owned()) && &t.name == example => {
+                Path::new("examples")
+                    .join(&t.name)
+                    .to_owned()
+                    .into_os_string()
+                    .into_string()
+                    .ok()
+            }
+            None if all_examples && t.kind.contains(&"example".to_owned()) => Path::new("examples")
+                .join(&t.name)
+                .to_owned()
+                .into_os_string()
+                .into_string()
+                .ok(),
+            None if !all_examples && t.kind.contains(&"bin".to_owned()) => Some(t.name.to_owned()),
+            _ => None,
+        })
+        .collect();
+
+    let mut post_env_vars: HashMap<String, OsString> = HashMap::new();
+
+    post_env_vars.insert(
+        "CRATE_MANIFEST_DIR".to_owned(),
+        manifest_dir.to_owned().into_os_string(),
+    );
+    post_env_vars.insert(
+        "CRATE_MANIFEST_PATH".to_owned(),
+        manifest_dir.join("Cargo.toml").into_os_string(),
+    );
+    post_env_vars.insert(
+        "CRATE_TARGET_DIR".to_owned(),
+        metadata.target_directory.to_owned().into_os_string(),
+    );
+    post_env_vars.insert("CRATE_OUT_DIR".to_owned(), out_dir.into_os_string());
+    post_env_vars.insert(
+        "CRATE_TARGET".to_owned(),
+        target_path.map(OsString::from).unwrap_or_default(),
+    );
+    post_env_vars.insert(
+        "CRATE_TARGET_TRIPLE".to_owned(),
+        OsString::from(target_triple.unwrap_or_default()),
+    );
+    post_env_vars.insert("CRATE_PROFILE".to_owned(), OsString::from(profile));
+    post_env_vars.insert(
+        "CRATE_BUILD_COMMAND".to_owned(),
+        OsString::from(build_command),
+    );
+    post_env_vars.insert("CRATE_OUT_BINS".to_owned(), OsString::from(bins.join(":")));
+
+    post_env_vars
 }
 
 fn run_post_build_script(
     metadata: &Metadata,
     manifest_path: Option<&String>,
     package: &Package,
-) -> Option<process::ExitStatus> {
+) -> (Option<process::Output>, HashMap<String, OsString>) {
     let manifest_path = manifest_path
         .map(PathBuf::from)
         .unwrap_or_else(|| package.manifest_path.clone());
     let manifest_dir = manifest_path.parent().expect("failed to get crate folder");
     let post_build_script_path = manifest_dir.join("post_build.rs");
 
+    let post_env_vars = build_envs(metadata, package, manifest_dir);
+
     if !post_build_script_path.exists() {
-        return None;
+        return (None, post_env_vars);
     }
     println!(
         "Running Post Build Script at {}",
@@ -214,91 +406,18 @@ fn run_post_build_script(
     fs::write(&build_script_manifest_path, build_script_manifest_content)
         .expect("Failed to write post build script manifest");
 
-    // gather arguments for post build script
-    let target_path = {
-        let mut args = env::args().skip_while(|val| !val.starts_with("--target"));
-        match args.next() {
-            Some(ref p) if p == "--target" => Some(args.next().expect("no target after --target")),
-            Some(p) => Some(p.trim_start_matches("--target=").to_owned()),
-            None => None,
-        }
-    };
-    let target_triple = {
-        let file_stem = target_path.as_ref().map(|t| {
-            Path::new(t)
-                .file_stem()
-                .expect("target has no file stem")
-                .to_owned()
-        });
-        file_stem.map(|s| s.into_string().expect("target not a valid string"))
-    };
-    let profile = if env::args().any(|arg| arg == "--release") {
-        "release"
-    } else {
-        "debug"
-    };
-    let mut out_dir = metadata.target_directory.clone();
-    if let Some(ref target_triple) = target_triple {
-        out_dir.push(target_triple);
-    }
-    out_dir.push(&profile);
-    let build_command = {
-        let mut cmd = String::from("cargo ");
-        let args: Vec<String> = env::args().skip(2).collect();
-        cmd.push_str(&args.join(" "));
-        cmd
-    };
-
-    let all_examples = env::args().any(|arg| arg == "--examples");
-    let example_name = {
-        if all_examples {
-            None
-        } else {
-            let mut args = env::args().skip_while(|val| !val.starts_with("--example"));
-            match args.next() {
-                Some(ref p) if p == "--example" => {
-                    Some(args.next().expect("no example after --example"))
-                }
-                Some(p) => Some(p.trim_start_matches("--example=").to_owned()),
-                None => None,
-            }
-        }
-    };
-
-    let bins: Vec<_> = package
-        .targets
-        .iter()
-        .filter(|t| t.crate_types.contains(&"bin".to_owned()))
-        .filter_map(|t| match example_name {
-            Some(ref example) if t.kind.contains(&"example".to_owned()) && &t.name == example => {
-                Some(format!("examples/{}", t.name))
-            }
-            None if all_examples && t.kind.contains(&"example".to_owned()) => {
-                Some(format!("examples/{}", t.name))
-            }
-            None if !all_examples && t.kind.contains(&"bin".to_owned()) => {
-                Some(format!("{}", t.name))
-            }
-            _ => None,
-        })
-        .collect();
-
     // run post build script
     let mut cmd = Command::new("cargo");
     cmd.arg("run");
     cmd.arg("--manifest-path");
     cmd.arg(build_script_manifest_path.as_os_str());
-    cmd.env("CRATE_MANIFEST_DIR", manifest_dir.as_os_str());
-    cmd.env(
-        "CRATE_MANIFEST_PATH",
-        manifest_dir.join("Cargo.toml").as_os_str(),
-    );
-    cmd.env("CRATE_TARGET_DIR", metadata.target_directory.as_os_str());
-    cmd.env("CRATE_OUT_DIR", out_dir);
-    cmd.env("CRATE_TARGET", target_path.unwrap_or_default());
-    cmd.env("CRATE_TARGET_TRIPLE", target_triple.unwrap_or_default());
-    cmd.env("CRATE_PROFILE", profile);
-    cmd.env("CRATE_BUILD_COMMAND", build_command);
-    cmd.env("CRATE_OUT_BINS", bins.join(":"));
-    Some(cmd.status().expect("Failed to run post build script"))
+
+    for (k, v) in &post_env_vars {
+        cmd.env(k, v);
+    }
+
+    (
+        Some(cmd.output().expect("Failed to run post build script")),
+        post_env_vars,
+    )
 }

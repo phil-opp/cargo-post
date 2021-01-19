@@ -20,8 +20,6 @@ cargo post CMD [ARGS]
 
 The `post_build.rs` is only run if `CMD` is a build command like `build` or [`xbuild`](http://github.com/rust-osdev/cargo-xbuild/).
 
-In workspaces, you might have to pass a `--package` argument to `cargo build` to specify the package for which the post build script should be run.
-
 ### Examples:
 
 Build the crate and run `post_build.rs` afterwards:
@@ -52,6 +50,9 @@ The build script is not executed because `cargo check` is not a build command. T
 
 ## Post-Build Script Format
 
+### Inputs to the Post-Build Script
+
+When the build script is run, there are a number of inputs to the build script, all passed in the form of environment variables.
 Post-build scripts are similar to cargo build scripts, but they get a different set of environment variables:
 
 - `CRATE_BUILD_COMMAND`: The full cargo command that was used for building without `post`
@@ -64,6 +65,18 @@ Post-build scripts are similar to cargo build scripts, but they get a different 
     - Example: With `cargo post xbuild --target /some/path/to/your/target-x86_64.json` this environment variable has the value `target-x86_64`.
 - `CRATE_TARGET_DIR`: The path to the `target` directory of your crate.
 - `CRATE_OUT_DIR`: The path to the directory where cargo puts the compiled binaries. This path is constructed by appending `CRATE_TARGET_TRIPLE` and `CRATE_PROFILE` to `CRATE_TARGET_DIR`.
+- `CRATE_OUT_BINS`: The patch to the binaries currently being built, relative to `CRATE_OUT_DIR` and seperated by ':'. Example: `some_binary:examples/first_example:examples/second_example`.
+
+
+### Outputs of the Post-Build Script
+
+Post-build scripts may save any output files in the directory specified in the OUT_DIR environment variable. Scripts should not modify any files outside of that directory.
+
+Post-build scripts communicate with Cargo by printing to stdout in a similar way as build scripts. Cargo will interpret each line that starts with cargo: as an instruction that will influence how the package is run. All other lines are ignored.
+
+The following is a summary of the instructions that Cargo recognizes, with each one detailed below.
+
+- `cargo:updated-bin=oldBinPath=newBinPath` — Tells Cargo to use `newBinPath` rather than `oldBinPath` when running.
 
 ## Dependencies
 
