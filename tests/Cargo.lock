@@ -8,3 +8,6 @@ version = "0.1.0"
 name = "simple"
 version = "0.1.0"
 
+[[package]]
+name = "simple_run"
+version = "0.1.0"

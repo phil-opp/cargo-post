@@ -137,6 +137,7 @@ fn main() {
 
             if let Some(ref output) = output {
                 if !output.status.success() {
+                    eprintln!("{}", String::from_utf8_lossy(&output.stderr));
                     process::exit(output.status.code().unwrap_or(1));
                 }
             }
@@ -154,7 +155,7 @@ fn main() {
             let mut bin = bins.next().expect("Found no binary to be executed!");
 
             if bins.next().is_some() {
-                panic!("More than one binary found! Use the `--bin` option to specify a binary, or the `default-run` manifest key")
+                panic!("More than one binary found! Use the `--bin` option to specify a binary")
             }
 
             // Parse stdout for `cargo:`
@@ -197,7 +198,7 @@ fn main() {
                     _ => {}
                 };
             }
-        };
+        }
     }
 }
 

@@ -45,7 +45,11 @@ jobs:
       - run: cargo post build --package simple
         working-directory: "tests/simple"
       - run: cargo post build --package dependency
-        working-directory: "tests/dependency"
+        working-directory: "tests/dependency" 
+      - run: cargo post build
+        working-directory: "tests" 
+      - run: cargo post run --package simple_run
+        working-directory: "tests"
 
   fmt:
     name: Rustfmt
