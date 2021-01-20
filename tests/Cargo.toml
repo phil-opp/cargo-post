@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "simple",
+    "simple_run",
     "dependency",
 ]
