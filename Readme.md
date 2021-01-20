@@ -1,5 +1,3 @@
-<img align="right" src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Aiga_mail_inverted.svg/114px-Aiga_mail_inverted.svg.png">
-
 # cargo-post
 
 A `cargo` wrapper that executes a post build script after a successful build.
