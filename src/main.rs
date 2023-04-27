@@ -216,7 +216,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         });
         file_stem.map(|s| s.into_string().expect("target not a valid string"))
     };
-    let profile = if env::args().any(|arg| arg == "--release") {
+    let profile = if env::args().any(|arg| arg == "--release" || arg == "-r") {
         "release"
     } else {
         "debug"
