@@ -1,5 +1,7 @@
 ## Unreleased
 
+# 0.1.7 – 2023-04-30
+
 - Fix: Treat `-r` as `--release` ([#19](https://github.com/phil-opp/cargo-post/pull/19))
 
 # 0.1.6 – 2020-12-17
