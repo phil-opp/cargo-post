@@ -225,7 +225,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     if let Some(ref target_triple) = target_triple {
         out_dir.push(target_triple);
     }
-    out_dir.push(&profile);
+    out_dir.push(profile);
     let build_command = {
         let mut cmd = String::from("cargo ");
         let args: Vec<String> = env::args().skip(2).collect();
