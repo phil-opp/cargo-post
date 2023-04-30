@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Fix: Treat `-r` as `--release` ([#19](https://github.com/phil-opp/cargo-post/pull/19))
+
 # 0.1.6 – 2020-12-17
 
 - Use toml to escape post build script path ([#15](https://github.com/phil-opp/cargo-post/pull/15))
