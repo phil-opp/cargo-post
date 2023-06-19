@@ -124,7 +124,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     if !post_build_script_path.exists() {
         return None;
     }
-    println!(
+    eprintln!(
         "Running Post Build Script at {}",
         post_build_script_path.display()
     );
