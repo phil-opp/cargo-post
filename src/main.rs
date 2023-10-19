@@ -5,6 +5,7 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
     process::{self, Command},
+    str,
 };
 
 static HELP: &str = include_str!("help.txt");
@@ -53,8 +54,15 @@ fn main() {
     };
 
     // run cargo
+    let args_to_filter = ["--use-host-triple"]; // Add more args as needed
+    let filtered_args: Vec<String> = args
+        .into_iter()
+        .filter(|arg| !args_to_filter.contains(&arg.as_str()))
+        .collect();
+
     let mut cmd = Command::new("cargo");
-    cmd.args(args);
+    cmd.args(&filtered_args);
+
     let exit_status = match cmd.status() {
         Ok(status) => status,
         Err(err) => panic!("failed to execute command `{:?}`: {:?}", cmd, err),
@@ -198,34 +206,63 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     fs::write(&build_script_manifest_path, build_script_manifest_content)
         .expect("Failed to write post build script manifest");
 
-    // gather arguments for post build script
-    let target_path = {
+    let build_section = find_cargo_config_build_section(&manifest_dir);
+
+    // Always compute the original target, regardless of whether --use-host-triple is given
+    let original_target_path = {
         let mut args = env::args().skip_while(|val| !val.starts_with("--target"));
         match args.next() {
             Some(ref p) if p == "--target" => Some(args.next().expect("no target after --target")),
             Some(p) => Some(p.trim_start_matches("--target=").to_owned()),
-            None => None,
+            None => {
+                // If --target isn't provided, we fetch from the build section
+                build_section.and_then(|section| {
+                    section
+                        .get("target")
+                        .and_then(toml::Value::as_str)
+                        .map(ToOwned::to_owned)
+                })
+            }
         }
     };
-    let target_triple = {
-        let file_stem = target_path.as_ref().map(|t| {
-            Path::new(t)
-                .file_stem()
-                .expect("target has no file stem")
-                .to_owned()
-        });
-        file_stem.map(|s| s.into_string().expect("target not a valid string"))
+
+    // Get original_target_triple for the crate
+    let original_target_triple = original_target_path.as_ref().map(|t| {
+        Path::new(t)
+            .file_stem()
+            .expect("target has no file stem")
+            .to_string_lossy()
+            .into_owned()
+    });
+
+    let use_host_triple = env::args().any(|arg| arg == "--use-host-triple");
+
+    // Get the target triple to be used for compiling the post build script
+    let target_triple_for_build_script = if use_host_triple {
+        // Use the system's target triple
+        Some(get_host_target().unwrap())
+    } else {
+        // Use the original target's triple
+        original_target_triple.clone()
     };
+
     let profile = if env::args().any(|arg| arg == "--release" || arg == "-r") {
         "release"
     } else {
         "debug"
     };
+
     let mut out_dir = metadata.target_directory.clone();
-    if let Some(ref target_triple) = target_triple {
-        out_dir.push(target_triple);
+    if let Some(ref original_target) = original_target_path {
+        let file_stem = Path::new(original_target)
+            .file_stem()
+            .expect("target has no file stem")
+            .to_string_lossy()
+            .into_owned();
+        out_dir.push(file_stem);
     }
     out_dir.push(profile);
+
     let build_command = {
         let mut cmd = String::from("cargo ");
         let args: Vec<String> = env::args().skip(2).collect();
@@ -238,16 +275,66 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     cmd.arg("run");
     cmd.arg("--manifest-path");
     cmd.arg(build_script_manifest_path.as_os_str());
+    if let Some(tgt_triple) = &target_triple_for_build_script {
+        cmd.arg("--target");
+        cmd.arg(tgt_triple);
+    }
     cmd.env("CRATE_MANIFEST_DIR", manifest_dir.as_os_str());
     cmd.env(
         "CRATE_MANIFEST_PATH",
         manifest_dir.join("Cargo.toml").as_os_str(),
     );
+    cmd.env("CRATE_PKG_NAME", &package.name);
+    cmd.env("CRATE_PKG_VERSION", &package.version.to_string());
     cmd.env("CRATE_TARGET_DIR", metadata.target_directory.as_os_str());
-    cmd.env("CRATE_OUT_DIR", out_dir);
-    cmd.env("CRATE_TARGET", target_path.unwrap_or_default());
-    cmd.env("CRATE_TARGET_TRIPLE", target_triple.unwrap_or_default());
+    cmd.env("CRATE_OUT_DIR", &out_dir);
+    cmd.env(
+        "CRATE_TARGET",
+        original_target_path.as_ref().unwrap_or(&String::new()),
+    );
+    cmd.env(
+        "CRATE_TARGET_TRIPLE",
+        original_target_triple.as_ref().unwrap_or(&String::new()),
+    );
     cmd.env("CRATE_PROFILE", profile);
     cmd.env("CRATE_BUILD_COMMAND", build_command);
     Some(cmd.status().expect("Failed to run post build script"))
+}
+
+fn find_cargo_config_build_section(path: &Path) -> Option<toml::Value> {
+    let config_path = path.join(".cargo/config.toml");
+    if config_path.exists() {
+        let content = fs::read_to_string(&config_path).unwrap();
+        let parsed: toml::Value = content.parse().unwrap();
+        if let Some(build) = parsed.get("build") {
+            return Some(build.clone());
+        }
+    }
+    path.parent()
+        .and_then(|parent| find_cargo_config_build_section(&parent))
+}
+
+fn get_host_target() -> Result<String, String> {
+    let output = Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .map_err(|_| "Failed to run rustc to get the host target".to_string())?;
+
+    let output_str = str::from_utf8(&output.stdout)
+        .map_err(|_| "`rustc -vV` didn't return utf8 output".to_string())?;
+
+    let field = "host: ";
+    let host = output_str
+        .lines()
+        .find(|l| l.starts_with(field))
+        .map(|l| &l[field.len()..])
+        .ok_or_else(|| {
+            format!(
+                "`rustc -vV` didn't have a line for `{}`, got:\n{}",
+                field.trim(),
+                output_str
+            )
+        })?
+        .to_string();
+    Ok(host)
 }
