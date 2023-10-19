@@ -5,6 +5,7 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
     process::{self, Command},
+    str,
 };
 
 static HELP: &str = include_str!("help.txt");
@@ -21,6 +22,31 @@ enum BuildScriptCall {
     AfterCommand,
     // TODO: Special variants for e.g. `cargo run` where the post build script needs to be
     // run in between (i.e. after the build, but before running it).
+}
+
+fn get_host_target() -> Result<String, String> {
+    let output = Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .map_err(|_| "Failed to run rustc to get the host target".to_string())?;
+
+    let output_str = str::from_utf8(&output.stdout)
+        .map_err(|_| "`rustc -vV` didn't return utf8 output".to_string())?;
+
+    let field = "host: ";
+    let host = output_str
+        .lines()
+        .find(|l| l.starts_with(field))
+        .map(|l| &l[field.len()..])
+        .ok_or_else(|| {
+            format!(
+                "`rustc -vV` didn't have a line for `{}`, got:\n{}",
+                field.trim(),
+                output_str
+            )
+        })?
+        .to_string();
+    Ok(host)
 }
 
 fn main() {
@@ -53,8 +79,15 @@ fn main() {
     };
 
     // run cargo
+    let args_to_filter = ["--use-host-triple"]; // Add more args as needed
+    let filtered_args: Vec<String> = args
+        .into_iter()
+        .filter(|arg| !args_to_filter.contains(&arg.as_str()))
+        .collect();
+
     let mut cmd = Command::new("cargo");
-    cmd.args(args);
+    cmd.args(&filtered_args);
+
     let exit_status = match cmd.status() {
         Ok(status) => status,
         Err(err) => panic!("failed to execute command `{:?}`: {:?}", cmd, err),
@@ -198,7 +231,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     fs::write(&build_script_manifest_path, build_script_manifest_content)
         .expect("Failed to write post build script manifest");
 
-    // gather arguments for post build script
+    // Always compute the original target, regardless of whether --use-host-triple is given
     let target_path = {
         let mut args = env::args().skip_while(|val| !val.starts_with("--target"));
         match args.next() {
@@ -207,15 +240,23 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
             None => None,
         }
     };
-    let target_triple = {
-        let file_stem = target_path.as_ref().map(|t| {
+
+    let use_host_triple = env::args().any(|arg| arg == "--use-host-triple");
+
+    let target_triple = if use_host_triple {
+        // Use the system's target triple
+        get_host_target().ok()
+    } else {
+        // Use the original target's triple
+        target_path.as_ref().map(|t| {
             Path::new(t)
                 .file_stem()
                 .expect("target has no file stem")
-                .to_owned()
-        });
-        file_stem.map(|s| s.into_string().expect("target not a valid string"))
+                .to_string_lossy()
+                .into_owned()
+        })
     };
+
     let profile = if env::args().any(|arg| arg == "--release" || arg == "-r") {
         "release"
     } else {
@@ -238,6 +279,10 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     cmd.arg("run");
     cmd.arg("--manifest-path");
     cmd.arg(build_script_manifest_path.as_os_str());
+    if let Some(tgt_triple) = &target_triple {
+        cmd.arg("--target");
+        cmd.arg(tgt_triple);
+    }
     cmd.env("CRATE_MANIFEST_DIR", manifest_dir.as_os_str());
     cmd.env(
         "CRATE_MANIFEST_PATH",
@@ -245,8 +290,9 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     );
     cmd.env("CRATE_TARGET_DIR", metadata.target_directory.as_os_str());
     cmd.env("CRATE_OUT_DIR", out_dir);
-    cmd.env("CRATE_TARGET", target_path.unwrap_or_default());
-    cmd.env("CRATE_TARGET_TRIPLE", target_triple.unwrap_or_default());
+    // When passing the arguments to the post build script:
+    cmd.env("CRATE_TARGET", target_path.unwrap_or_default()); // This will always be the original target
+    cmd.env("CRATE_TARGET_TRIPLE", target_triple.unwrap_or_default()); // This can be either the original or the host triple, depending on --use-host-triple
     cmd.env("CRATE_PROFILE", profile);
     cmd.env("CRATE_BUILD_COMMAND", build_command);
     Some(cmd.status().expect("Failed to run post build script"))
