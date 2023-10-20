@@ -117,9 +117,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
 
     let manifest_path = manifest_path
         .map(PathBuf::from)
-        .unwrap_or_else(|| package.manifest_path.clone())
-        .canonicalize()
-        .expect("manifest path does not exist");
+        .unwrap_or_else(|| package.manifest_path.clone());
     let manifest_dir = manifest_path.parent().expect("failed to get crate folder");
     let post_build_script_path = manifest_dir.join("post_build.rs");
 
@@ -210,11 +208,6 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
             None => None,
         }
     };
-    let target_path = target_path.map(|path| {
-        Path::new(&path)
-            .canonicalize()
-            .expect("target path does not exist")
-    });
     let target_triple = {
         let file_stem = target_path.as_ref().map(|t| {
             Path::new(t)
