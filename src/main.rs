@@ -117,7 +117,9 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
 
     let manifest_path = manifest_path
         .map(PathBuf::from)
-        .unwrap_or_else(|| package.manifest_path.clone());
+        .unwrap_or_else(|| package.manifest_path.clone())
+        .canonicalize()
+        .expect("manifest path does not exist");
     let manifest_dir = manifest_path.parent().expect("failed to get crate folder");
     let post_build_script_path = manifest_dir.join("post_build.rs");
 
@@ -184,7 +186,8 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     // Create a dummy Cargo.toml for post build script
     let build_script_manifest_dir = metadata
         .target_directory
-        .clone()
+        .canonicalize()
+        .expect("target directory does not exist")
         .join("post_build_script_manifest");
     fs::create_dir_all(&build_script_manifest_dir)
         .expect("failed to create build script manifest dir");
@@ -207,6 +210,11 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
             None => None,
         }
     };
+    let target_path = target_path.map(|path| {
+        Path::new(&path)
+            .canonicalize()
+            .expect("target path does not exist")
+    });
     let target_triple = {
         let file_stem = target_path.as_ref().map(|t| {
             Path::new(t)
@@ -233,11 +241,25 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         cmd
     };
 
-    // run post build script
+    // build post build script
     let mut cmd = Command::new("cargo");
-    cmd.arg("run");
+    // run build command from home directory to avoid effects of `.cargo/config` files
+    cmd.current_dir(home::cargo_home().unwrap());
+    cmd.arg("build");
     cmd.arg("--manifest-path");
     cmd.arg(build_script_manifest_path.as_os_str());
+    let exit_status = cmd.status().expect("Failed to run post build script");
+    if !exit_status.success() {
+        process::exit(exit_status.code().unwrap_or(1));
+    }
+
+    // run post build script
+    let mut cmd = Command::new(
+        build_script_manifest_dir
+            .join("target")
+            .join("debug")
+            .join("post-build-script"),
+    );
     cmd.env("CRATE_MANIFEST_DIR", manifest_dir.as_os_str());
     cmd.env(
         "CRATE_MANIFEST_PATH",
