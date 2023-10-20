@@ -2,4 +2,5 @@
 members = [
     "simple",
     "dependency",
+    "cargo_config",
 ]
