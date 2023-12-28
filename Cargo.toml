@@ -11,6 +11,7 @@ repository = "https://github.com/phil-opp/cargo-post"
 
 [dependencies]
 toml = "0.5.0"
+home = "0.5.5"
 
 [dependencies.cargo_metadata]
 version = "0.7.3"

@@ -46,6 +46,9 @@ jobs:
         working-directory: "tests/simple"
       - run: cargo post build --package dependency
         working-directory: "tests/dependency"
+      - run: rustup target add x86_64-unknown-none
+      - run: cargo post build --package cargo_config
+        working-directory: "tests/cargo_config"
 
   fmt:
     name: Rustfmt
