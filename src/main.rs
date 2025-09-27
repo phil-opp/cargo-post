@@ -156,7 +156,9 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
             .iter_mut()
         {
             if let Some(path) = dependency.get_mut("path") {
-                let dep_path = Path::new(path.as_str().expect("dependency path not a string"));
+                let dep_path = manifest_dir.join(Path::new(
+                    path.as_str().expect("dependency path not a string"),
+                ));
                 let path_canoncicalized = dep_path.canonicalize().unwrap_or_else(|_| {
                     panic!(
                         "Dependency {} does not exist at {}",
