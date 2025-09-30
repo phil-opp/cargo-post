@@ -206,7 +206,8 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         match args.next() {
             Some(ref p) if p == "--target" => Some(args.next().expect("no target after --target")),
             Some(p) => Some(p.trim_start_matches("--target=").to_owned()),
-            None => None,
+            // --target overrides the CARGO_BUILD_TARGET env var, return it's possible value if no CLI flag is found
+            None => env::var("CARGO_BUILD_TARGET").ok(),
         }
     };
     let target_triple = {
