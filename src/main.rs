@@ -76,6 +76,9 @@ fn main() {
 }
 
 fn run_post_build_script() -> Option<process::ExitStatus> {
+    let rustc_metadata =
+        rustc_version::version_meta().expect("cannot query rustc version metadata");
+
     let mut cmd = cargo_metadata::MetadataCommand::new();
     cmd.no_deps();
     let manifest_path = {
@@ -236,6 +239,10 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         cmd
     };
 
+    let is_target_mismatch = target_triple
+        .as_ref()
+        .is_some_and(|t| *t != rustc_metadata.host);
+
     // build post build script
     let mut cmd = Command::new("cargo");
     // run build command from home directory to avoid effects of `.cargo/config` files
@@ -243,18 +250,26 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     cmd.arg("build");
     cmd.arg("--manifest-path");
     cmd.arg(build_script_manifest_path.as_os_str());
+    if is_target_mismatch {
+        cmd.arg("--target");
+        cmd.arg(&rustc_metadata.host);
+    }
     let exit_status = cmd.status().expect("Failed to run post build script");
     if !exit_status.success() {
         process::exit(exit_status.code().unwrap_or(1));
     }
 
     // run post build script
-    let mut cmd = Command::new(
-        build_script_manifest_dir
-            .join("target")
-            .join("debug")
-            .join("post-build-script"),
-    );
+    let cmd_path = {
+        let mut path = build_script_manifest_dir.join("target");
+        if is_target_mismatch {
+            path.push(&rustc_metadata.host);
+        }
+        path.push("debug");
+        path.push("post-build-script");
+        path
+    };
+    let mut cmd = Command::new(cmd_path);
     cmd.env("CRATE_MANIFEST_DIR", manifest_dir.as_os_str());
     cmd.env(
         "CRATE_MANIFEST_PATH",
