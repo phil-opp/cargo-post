@@ -337,7 +337,12 @@ fn parse_build_target(path: &Path) -> Option<String> {
     let parsed: toml::Value = content.parse().expect("cannot parse cargo config toml");
     if let Some(build) = parsed.get("build") {
         if let Some(target) = build.get("target") {
-            return Some(target.to_string());
+            return Some(
+                target
+                    .as_str()
+                    .expect("build.target should be a string")
+                    .to_string(),
+            );
         }
     }
     None
