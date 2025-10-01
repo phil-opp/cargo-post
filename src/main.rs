@@ -325,7 +325,7 @@ fn find_cargo_config_target(path: &Path) -> Option<String> {
         if path.ne(cargo_home) {
             // Our current path is effectively at the root of the volume;
             // attempt to find configuration at $CARGO_HOME/config.toml
-            return find_cargo_config_target(&cargo_home);
+            return find_cargo_config_target(cargo_home);
         }
         // All stop conditions have been met and no target has been found
         None
@@ -333,7 +333,7 @@ fn find_cargo_config_target(path: &Path) -> Option<String> {
 }
 
 fn parse_build_target(path: &Path) -> Option<String> {
-    let content = fs::read_to_string(&path).expect("cannot read cargo config file");
+    let content = fs::read_to_string(path).expect("cannot read cargo config file");
     let parsed: toml::Value = content.parse().expect("cannot parse cargo config toml");
     if let Some(build) = parsed.get("build") {
         if let Some(target) = build.get("target") {
