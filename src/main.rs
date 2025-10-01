@@ -205,12 +205,17 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
 
     // gather arguments for post build script
     let target_path = {
+        // Target resolution chooses the first available out of the following:
+        // - target CLI flag
+        // - $CARGO_BUILD_TARGET
+        // - build.target in a .cargo/config file
         let mut args = env::args().skip_while(|val| !val.starts_with("--target"));
         match args.next() {
             Some(ref p) if p == "--target" => Some(args.next().expect("no target after --target")),
             Some(p) => Some(p.trim_start_matches("--target=").to_owned()),
-            // --target overrides the CARGO_BUILD_TARGET env var, return it's possible value if no CLI flag is found
-            None => env::var("CARGO_BUILD_TARGET").ok(),
+            None => env::var("CARGO_BUILD_TARGET")
+                .ok()
+                .or(find_cargo_config_target(manifest_dir)),
         }
     };
     let target_triple = {
@@ -282,4 +287,58 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     cmd.env("CRATE_PROFILE", profile);
     cmd.env("CRATE_BUILD_COMMAND", build_command);
     Some(cmd.status().expect("Failed to run post build script"))
+}
+
+fn find_cargo_config_target(path: &Path) -> Option<String> {
+    // Cargo config path resolution works in accordance with:
+    // https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure
+
+    // Set up a path for $CARGO_HOME
+    let cargo_home = env::var("CARGO_HOME").unwrap();
+    let cargo_home = Path::new(&cargo_home);
+    // Depending on the path we enter this function with,
+    // allocate a list of paths to check in order
+    let paths = if path.eq(cargo_home) {
+        vec![path.join("config.toml")]
+    } else {
+        vec![path.join(".cargo/config"), path.join(".cargo/config.toml")]
+    };
+    // First attempt to find and parse variants for current given path
+    for config_path in paths {
+        if config_path.exists() {
+            let target = parse_build_target(&config_path);
+            if target.is_some() {
+                return target;
+            }
+        }
+    }
+    // We haven't found any config for $CARGO_HOME/config.toml;
+    // stop recursing
+    if path.eq(cargo_home) {
+        return None;
+    }
+
+    if let Some(p) = path.parent() {
+        // Our current path still has a parent, recurse into it
+        find_cargo_config_target(p)
+    } else {
+        if path.ne(cargo_home) {
+            // Our current path is effectively at the root of the volume;
+            // attempt to find configuration at $CARGO_HOME/config.toml
+            return find_cargo_config_target(&cargo_home);
+        }
+        // All stop conditions have been met and no target has been found
+        None
+    }
+}
+
+fn parse_build_target(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(&path).expect("cannot read cargo config file");
+    let parsed: toml::Value = content.parse().expect("cannot parse cargo config toml");
+    if let Some(build) = parsed.get("build") {
+        if let Some(target) = build.get("target") {
+            return Some(target.to_string());
+        }
+    }
+    None
 }
