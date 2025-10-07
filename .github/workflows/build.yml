@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup update
       - run: cargo build
 
   test:
@@ -30,14 +30,13 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-none
+      - run: rustup update
       - run: cargo install --path . --debug
       - run: cargo post build --package simple
         working-directory: "tests/simple"
       - run: cargo post build --package dependency
         working-directory: "tests/dependency"
+      - run: rustup target add x86_64-unknown-none
       - run: cargo post build --package cargo_config
         working-directory: "tests/cargo_config"
 
@@ -46,9 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - run: rustup update
+      - run: rustup component add rustfmt
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -56,7 +54,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - run: rustup update
+      - run: rustup component add clippy
       - run: cargo clippy -- -D warnings
