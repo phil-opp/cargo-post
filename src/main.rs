@@ -129,14 +129,14 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         post_build_script_path.display()
     );
 
-    let cargo_toml: toml::Value = {
+    let cargo_toml: toml::Table = {
         let mut content = String::new();
         File::open(&manifest_path)
             .expect("Failed to open Cargo.toml")
             .read_to_string(&mut content)
             .expect("Failed to read Cargo.toml");
         content
-            .parse::<toml::Value>()
+            .parse::<toml::Table>()
             .expect("Failed to parse Cargo.toml")
     };
 
@@ -194,8 +194,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     let build_script_manifest_path = build_script_manifest_dir.join("Cargo.toml");
     let build_script_manifest_content = format!(
         include_str!("post_build_script_manifest.toml"),
-        file_name = toml::to_string(&post_build_script_path.to_str())
-            .expect("Failed to serialize post build script path as TOML string"),
+        file_name = toml::Value::String(post_build_script_path.display().to_string()),
         dependencies = dependencies_string,
     );
     fs::write(&build_script_manifest_path, build_script_manifest_content)
