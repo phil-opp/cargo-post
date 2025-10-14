@@ -117,7 +117,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
 
     let manifest_path = manifest_path
         .map(PathBuf::from)
-        .unwrap_or_else(|| package.manifest_path.clone());
+        .unwrap_or_else(|| package.manifest_path.clone().into());
     let manifest_dir = manifest_path.parent().expect("failed to get crate folder");
     let post_build_script_path = manifest_dir.join("post_build.rs");
 
@@ -152,7 +152,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         // adjust path dependencies
         for (dep_name, dependency) in dependencies
             .as_table_mut()
-            .unwrap_or(&mut toml::value::Map::new())
+            .unwrap_or(&mut toml::map::Map::new())
             .iter_mut()
         {
             if let Some(path) = dependency.get_mut("path") {
