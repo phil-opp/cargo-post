@@ -117,7 +117,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
 
     let manifest_path = manifest_path
         .map(PathBuf::from)
-        .unwrap_or_else(|| package.manifest_path.clone());
+        .unwrap_or_else(|| package.manifest_path.clone().into());
     let manifest_dir = manifest_path.parent().expect("failed to get crate folder");
     let post_build_script_path = manifest_dir.join("post_build.rs");
 
@@ -129,14 +129,14 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         post_build_script_path.display()
     );
 
-    let cargo_toml: toml::Value = {
+    let cargo_toml: toml::Table = {
         let mut content = String::new();
         File::open(&manifest_path)
             .expect("Failed to open Cargo.toml")
             .read_to_string(&mut content)
             .expect("Failed to read Cargo.toml");
         content
-            .parse::<toml::Value>()
+            .parse::<toml::Table>()
             .expect("Failed to parse Cargo.toml")
     };
 
@@ -152,7 +152,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
         // adjust path dependencies
         for (dep_name, dependency) in dependencies
             .as_table_mut()
-            .unwrap_or(&mut toml::value::Map::new())
+            .unwrap_or(&mut toml::map::Map::new())
             .iter_mut()
         {
             if let Some(path) = dependency.get_mut("path") {
@@ -194,8 +194,7 @@ fn run_post_build_script() -> Option<process::ExitStatus> {
     let build_script_manifest_path = build_script_manifest_dir.join("Cargo.toml");
     let build_script_manifest_content = format!(
         include_str!("post_build_script_manifest.toml"),
-        file_name = toml::to_string(&post_build_script_path.to_str())
-            .expect("Failed to serialize post build script path as TOML string"),
+        file_name = toml::Value::String(post_build_script_path.display().to_string()),
         dependencies = dependencies_string,
     );
     fs::write(&build_script_manifest_path, build_script_manifest_content)
