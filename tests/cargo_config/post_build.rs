@@ -16,15 +16,21 @@ fn main() {
         current_dir.join("Cargo.toml")
     );
     assert_eq!(env::var("CRATE_PROFILE").unwrap(), "debug");
-    assert_eq!(env::var("CRATE_TARGET").unwrap(), "");
-    assert_eq!(env::var("CRATE_TARGET_TRIPLE").unwrap(), "");
+    assert_eq!(env::var("CRATE_TARGET").unwrap(), "x86_64-unknown-none");
+    assert_eq!(
+        env::var("CRATE_TARGET_TRIPLE").unwrap(),
+        "x86_64-unknown-none"
+    );
     assert_eq!(
         PathBuf::from(env::var("CRATE_TARGET_DIR").unwrap()),
         current_parent.join("target")
     );
     assert_eq!(
         PathBuf::from(env::var("CRATE_OUT_DIR").unwrap()),
-        current_parent.join("target").join("debug")
+        current_parent
+            .join("target")
+            .join("x86_64-unknown-none")
+            .join("debug")
     );
     println!("ok");
 }
