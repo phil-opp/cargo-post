@@ -334,7 +334,7 @@ fn find_cargo_config_target(path: &Path) -> Option<String> {
 
 fn parse_build_target(path: &Path) -> Option<String> {
     let content = fs::read_to_string(path).expect("cannot read cargo config file");
-    let parsed: toml::Value = content.parse().expect("cannot parse cargo config toml");
+    let parsed: toml::Table = content.parse().expect("cannot parse cargo config toml");
     if let Some(build) = parsed.get("build") {
         if let Some(target) = build.get("target") {
             return Some(
