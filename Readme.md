@@ -1,3 +1,7 @@
+# ARCHIVED AND UNMAINTAINED
+
+This project is archived and not maintained anymore. 
+
 # cargo-post
 
 A `cargo` wrapper that executes a post build script after a successful build.
